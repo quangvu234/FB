@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Thu thập bài viết Facebook theo từ khóa, cá nhân, Trang và nhóm trên máy của bạn.">
+  <title>FB Collector · Thu thập bài viết</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="#collect"><span class="brand-mark">f<span>↗</span></span><span>FB Collector<small>KHÔNG GIAN THU THẬP</small></span></a>
+    <div class="workspace-label">WORKSPACE <span>01</span></div>
+    <nav aria-label="Điều hướng"><a class="nav-link active" href="#collect"><span data-icon="grid"></span>Thu thập<span class="nav-arrow">↗</span></a><a class="nav-link" href="#results"><span data-icon="layers"></span>Kết quả<span id="nav-count" class="nav-count">0</span></a><a class="nav-link" href="#history"><span data-icon="clock"></span>Lịch sử</a></nav>
+    <div class="sidebar-note"><span class="note-symbol" data-icon="database"></span><strong>Dữ liệu ở trên máy bạn.</strong><p>Bài viết được lưu trong quá trình thu thập và có thể tải xuống bất cứ lúc nào.</p><span class="local-badge"><i></i> LOCAL WORKSPACE</span></div>
+    <div class="sidebar-bottom"><div class="browser-label"><i id="browser-dot"></i><span id="browser-state">Đang kiểm tra Chrome…</span></div><button id="open-browser" class="login-button" type="button"><span data-icon="external"></span>Mở Chrome đăng nhập</button><small>Dùng phiên Facebook đã lưu của project.</small></div>
+  </aside>
+  <main>
+    <header class="topbar"><span>Workspace <span class="slash">/</span> <strong>Thu thập bài viết</strong></span><span class="environment"><i></i> Đang chạy trên máy bạn</span><button id="open-browser-mobile" class="mobile-login-button" type="button"><span data-icon="external"></span>Đăng nhập Facebook</button></header>
+    <section id="collect" class="intro"><div><div class="eyebrow">FACEBOOK COLLECTION</div><h1>Thu thập bài viết<span>.</span></h1><p>Bắt đầu từ một từ khóa, một người, một Trang hoặc một nhóm.</p></div><div class="intro-tag"><span data-icon="spark"></span> Một nơi cho mọi nguồn</div></section>
+    <div id="connection-error" class="alert" role="alert" hidden>Không kết nối được giao diện. Kiểm tra terminal đang chạy và tải lại trang.</div>
+    <section class="stats" aria-label="Dữ liệu đã lưu"><div class="stat"><span class="stat-icon blue" data-icon="document"></span><div><span>Bài viết đã lưu</span><strong id="stat-posts">0</strong></div><small>Tổng dữ liệu</small></div><div class="stat"><span class="stat-icon green" data-icon="comment"></span><div><span>Bình luận &amp; reply</span><strong id="stat-comments">0</strong></div><small>Đã thu thập</small></div><div class="stat"><span class="stat-icon peach" data-icon="image"></span><div><span>Ảnh đính kèm</span><strong id="stat-images">0</strong></div><small>URL ảnh đã lưu</small></div></section>
+    <div class="work-grid">
+      <section class="panel source-panel"><div class="panel-heading"><div><span class="step">01</span><h2>Nguồn thu thập</h2></div><span class="subtle-label">THIẾT LẬP LƯỢT MỚI</span></div>
+        <form id="collect-form"><fieldset class="mode-picker"><legend class="field-label">Bạn muốn thu thập từ đâu?</legend><div class="mode-options"><label><input type="radio" name="mode" value="auto" checked><span>Tự nhận diện</span></label><label><input type="radio" name="mode" value="keyword"><span>Từ khóa</span></label><label><input type="radio" name="mode" value="profile"><span>Cá nhân</span></label><label><input type="radio" name="mode" value="page"><span>Trang</span></label><label><input type="radio" name="mode" value="group"><span>Nhóm</span></label></div></fieldset>
+          <label class="field-label source-label" for="sources">Từ khóa hoặc URL Facebook <span>Mỗi nguồn một dòng</span></label>
+          <textarea id="sources" name="sources" rows="5" maxlength="16000" required placeholder="việc làm online tại nhà&#10;https://www.facebook.com/ten.trang&#10;https://www.facebook.com/groups/123456"></textarea>
+          <div class="source-meta"><span id="source-hint"><span class="tiny-dot"></span>Tự phân biệt từ khóa và URL</span><span id="source-count">0 nguồn</span></div>
+          <div class="number-fields"><div><label class="field-label" for="max-posts">Số bài / nguồn</label><div class="number-control"><input id="max-posts" type="number" min="1" max="500" step="1" value="20" required><span>bài viết</span></div></div><div><label class="field-label" for="max-comments">Bình luận / bài</label><div class="number-control"><input id="max-comments" type="number" min="0" max="5000" step="1" value="10" required><span>gồm reply</span></div></div></div>
+          <label class="ocr-option"><span class="ocr-symbol" data-icon="scan"></span><span><strong>Đọc chữ trong ảnh</strong><small>Bật OCR khi cần lấy nội dung từ ảnh đính kèm.</small></span><input id="ocr" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
+          <div id="form-error" class="form-error" role="alert" hidden></div>
+          <button id="start-button" class="primary-button" type="submit" disabled><span data-icon="play"></span><span>Bắt đầu thu thập</span><span class="button-arrow">→</span></button>
+          <p class="form-footnote"><span data-icon="lock"></span>Thu thập nội dung công khai đang hiển thị trên Facebook.</p>
+        </form>
+      </section>
+      <section class="panel activity-panel"><div class="panel-heading"><div><span class="step">02</span><h2>Tiến trình</h2></div><span id="job-badge" class="status-badge idle"><i></i>Sẵn sàng</span></div>
+        <div class="activity-content"><div id="activity-icon" class="activity-icon" data-icon="radar"></div><h3 id="activity-title">Sẵn sàng cho lượt thu thập mới</h3><p id="activity-description">Nhập nguồn ở bên trái và nhấn bắt đầu.<br>Kết quả sẽ xuất hiện ngay khi có bài được lưu.</p>
+          <div class="progress-caption"><span id="progress-label">Chưa có lượt chạy</span><span id="progress-count">—</span></div><progress id="job-progress" value="0" max="1" aria-label="Số nguồn đã xử lý"></progress><div id="current-source" class="current-source">Bạn có thể nhập nhiều nguồn trong cùng một lượt.</div>
+          <div class="log-header"><span><i id="log-dot"></i>NHẬT KÝ THU THẬP</span><button id="toggle-logs" class="text-button" type="button" aria-expanded="true" aria-controls="job-logs">Thu gọn</button></div><pre id="job-logs" class="log-console" tabindex="0" aria-label="Nhật ký thu thập">Nhật ký sẽ xuất hiện tại đây…</pre>
+          <div class="activity-bottom"><span><span data-icon="shield"></span>Các bài đã lưu được giữ khi dừng.</span><button id="stop-button" class="stop-button" type="button" hidden><span data-icon="stop"></span>Dừng thu thập</button></div>
+        </div>
+      </section>
+    </div>
+    <section id="results" class="panel results-panel"><div class="results-heading"><div><span class="eyebrow">DỮ LIỆU CỦA BẠN</span><h2>Bài viết đã lưu <span id="result-count" class="count-badge">0</span></h2></div><div class="result-actions"><label class="search-box"><span data-icon="search"></span><input id="search-posts" type="search" placeholder="Tìm trong kết quả…" aria-label="Tìm bài viết đã lưu"></label><a id="download" class="secondary-button" href="/api/export" download="posts.jsonl"><span data-icon="download"></span>Tải JSONL</a></div></div>
+      <div class="table-heading"><span>TÁC GIẢ</span><span>NỘI DUNG BÀI VIẾT</span><span>NGUỒN</span><span>ĐÃ THU THẬP</span></div><div id="post-list" aria-live="polite"></div><div id="empty-results" class="empty-state"><div class="empty-illustration"><span data-icon="layers"></span><span class="empty-plus">+</span></div><h3>Chưa có bài viết nào</h3><p>Thêm nguồn và bắt đầu lượt thu thập đầu tiên.<br>Bài viết, bình luận và reply sẽ được lưu ở đây.</p></div><div id="pagination" class="pagination" hidden><span id="page-label"></span><div><button id="previous-page" class="page-button" type="button" aria-label="Trang trước">←</button><button id="next-page" class="page-button" type="button" aria-label="Trang sau">→</button></div></div>
+    </section>
+    <section id="history" class="history-section"><div><h2>Lượt chạy gần đây</h2><p>Lịch sử hiển thị trong phiên giao diện hiện tại.</p></div><div id="history-list" class="history-list"><span class="history-empty">Chưa có lượt chạy.</span></div></section>
+    <footer><span>FB Collector <span class="footer-dot">·</span> Không gian thu thập cá nhân</span><span>Được lưu trên máy của bạn <span data-icon="database"></span></span></footer>
+  </main>
+  <dialog id="post-dialog" aria-labelledby="detail-title"><div class="dialog-heading"><div><span class="eyebrow">CHI TIẾT BÀI VIẾT</span><h2 id="detail-title">Bài viết</h2></div><button id="close-dialog" class="close-button" type="button" aria-label="Đóng chi tiết">×</button></div><div id="post-detail"></div></dialog>
+  <div id="toast" class="toast" role="status" hidden></div>
+</body></html>

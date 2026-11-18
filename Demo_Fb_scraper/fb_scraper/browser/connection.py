@@ -83,13 +83,13 @@ async def browser_context():
 
         # Bên gọi nhận context ở dòng: async with browser_context() as context.
         yield context
-        # Khi rời async with, Playwright ngắt kết nối; không đóng Chrome/context của người dùng.
-        # Do not call browser.close()/context.close() on the user's Chrome.
+        # Khi rời async with, Playwright ngắt kết nối; không gọi browser.close()/context.close()
+        # vì đó là Chrome của người dùng.
 
 
 def create_agent_browser(browser_class):
     """Cùng thứ tự cấu hình với collector; không tự fallback sang phiên trắng."""
-    # All modes connect over CDP. browser-use never clones or replaces our profile.
+    # Mọi chế độ đều kết nối qua CDP; browser-use không sao chép hay thay hồ sơ Chrome.
     return browser_class(cdp_url=get_cdp_url(), keep_alive=True)
 
 
@@ -106,11 +106,6 @@ async def start_agent_browser(browser):
 
 
 def run_cli(argv=None):
-    import sys
-
-    for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, "reconfigure"):
-            stream.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="Mở Chrome theo cùng cấu hình .env của collector.")
     parser.add_argument("--open", action="store_true")
     args = parser.parse_args(argv)
@@ -121,7 +116,3 @@ def run_cli(argv=None):
             open_chrome()
         except (OSError, ValueError, RuntimeError) as exc:
             parser.exit(1, f"LỖI: {exc}\n")
-
-
-if __name__ == "__main__":
-    run_cli()

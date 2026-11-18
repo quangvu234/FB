@@ -6,7 +6,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
-from fb_scraper.common.urls import canonical_entity_url
+from fb_scraper.common.urls import canonical_entity_url, is_login_url
 
 
 # Đọc liên kết tên trong vùng kết quả, tránh nút thao tác, menu và liên kết trong phần mô tả.
@@ -100,7 +100,7 @@ async def iter_keyword_results(page, keyword, kind, max_results=20, max_scrolls=
     expected_url = urlparse(search_page_url)
     current_parameters = parse_qs(current_url.query)
 
-    if "/login" in current_url.path or "/checkpoint" in current_url.path:
+    if is_login_url(page.url):
         raise RuntimeError("Facebook yêu cầu đăng nhập/xác minh; hãy xử lý trên Chrome rồi chạy lại.")
 
     wrong_route = current_url.path.rstrip("/") != expected_url.path.rstrip("/")
@@ -117,8 +117,7 @@ async def iter_keyword_results(page, keyword, kind, max_results=20, max_scrolls=
 
     # Lượt đầu đọc trang hiện có; các lượt sau tương ứng với thao tác cuộn.
     for turn in range(max_scrolls + 1):
-        current_path = urlparse(page.url).path
-        if "/login" in current_path or "/checkpoint" in current_path:
+        if is_login_url(page.url):
             raise RuntimeError("Facebook yêu cầu đăng nhập/xác minh khi tải thêm kết quả.")
 
         snapshot = await page.evaluate(EXTRACT_RESULTS_JS)

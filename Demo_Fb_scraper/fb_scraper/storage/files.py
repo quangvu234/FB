@@ -5,32 +5,25 @@ import tempfile
 import time
 from pathlib import Path
 
+from fb_scraper.storage.sql import row_to_dict
+
 
 # Xuất bảng ra JSONL; dùng chung cơ chế xử lý khóa file cho bài viết, trang cá nhân và nhóm.
-def export_rows(db, target, query, json_fields=()):
+def export_rows(db, target, query, json_fields=(), transform=None):
     """Đọc từng dòng SQLite và ghi JSONL qua cơ chế xuất file an toàn."""
     def write_rows(output):
         # Đây là hàm được atomic_write gọi sau khi đã mở file tạm.
         cursor = db.execute(query)
-        column_names = []
-        for column in cursor.description:
-            column_names.append(column[0])
-
         for row in cursor:
-            record = {}
-            for index in range(len(column_names)):
-                column_name = column_names[index]
-                record[column_name] = row[index]
-
+            record = row_to_dict(cursor, row)
             for field in json_fields:
-                field_value = record.get(field)
-                if field_value is not None:
-                    record[field] = json.loads(field_value)
+                if record.get(field) is not None:
+                    record[field] = json.loads(record[field])
                 else:
                     record[field] = None
-
-            json_line = json.dumps(record, ensure_ascii=False)
-            output.write(json_line + "\n")
+            if transform is not None:
+                record = transform(record)
+            output.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     return atomic_write(target, write_rows)
 

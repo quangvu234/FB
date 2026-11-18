@@ -17,7 +17,6 @@ SECTION_LABELS = {
     "hạng mục", "categories", "category", "thông tin pháp lý và quyền riêng tư", "privacy and legal info",
     "đại học", "college", "university", "trường trung học", "high school",
 }
-NUMBER = r"(\d[\d.,]*\s*(?:triệu|nghìn|ngàn|million|thousand|tr|[kmn])?)"
 
 
 # Chuẩn hóa khoảng trắng Facebook (kể cả NBSP) thành những dòng không rỗng.
@@ -35,37 +34,6 @@ def text_lines(text):
         cleaned_lines.append(cleaned_line.strip())
 
     return cleaned_lines
-
-
-# Đổi số rút gọn thành ước lượng; số nguyên có dấu ngăn hàng nghìn giữ giá trị chính xác.
-def parse_display_count(value):
-    """Ví dụ: 1,2K -> 1200; 56.060 -> 56060; văn bản không phải số -> None."""
-    if not value:
-        value = ""
-
-    match = re.fullmatch(NUMBER, value.strip(), re.I)
-    if not match:
-        return None
-
-    number_parts = re.fullmatch(r"([\d.,]+)\s*(.*)", match.group(1))
-    number_text = number_parts.group(1)
-    suffix = number_parts.group(2).lower()
-
-    multipliers = {
-        "k": 1000, "n": 1000, "nghìn": 1000, "ngàn": 1000, "thousand": 1000,
-        "m": 1000000, "tr": 1000000, "triệu": 1000000, "million": 1000000,
-    }
-    multiplier = multipliers.get(suffix, 1)
-
-    try:
-        if multiplier == 1:
-            integer_text = re.sub(r"[.,]", "", number_text)
-            return int(integer_text)
-
-        decimal_text = number_text.replace(",", ".")
-        return round(float(decimal_text) * multiplier)
-    except ValueError:
-        return None
 
 
 # Lấy nội dung nằm sau tiêu đề đã biết; dừng ở tiêu đề kế tiếp để tránh lẫn trường khác.

@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
+from fb_scraper.common.comments import normalize_comments
 from fb_scraper.posts import collector as collector
 from fb_scraper.posts import pipeline as pipeline
 from fb_scraper.posts import reader as reader
@@ -41,7 +42,7 @@ class PostPipelineTests(PersistenceFixture, unittest.IsolatedAsyncioTestCase):
              patch.object(reader, "expand_see_more", new=AsyncMock()), \
              patch.object(pipeline, "scrape_top_comments", new=interrupt):
             with self.assertRaises(KeyboardInterrupt):
-                await collector.main(SimpleNamespace(ocr=False, gpu=False, max_posts=1, comments=0))
+                await collector.main(SimpleNamespace(ocr=False, gpu=False, max_posts=1, max_comments=0))
         self.assertEqual(len(self.rows()), 1)
         page.close.assert_awaited_once()
         page.mouse.wheel.assert_not_awaited()
@@ -65,9 +66,9 @@ class PostPipelineTests(PersistenceFixture, unittest.IsolatedAsyncioTestCase):
              patch.object(pipeline, "iter_source_posts", new=source), \
              patch.object(pipeline, "scrape_top_comments", new=AsyncMock(return_value=["Bình luận A", "Bình luận B"])), \
              patch.object(pipeline, "download_images", new=AsyncMock()) as download:
-            await collector.main(SimpleNamespace(ocr=False, gpu=False, max_posts=1, comments=20))
+            await collector.main(SimpleNamespace(ocr=False, gpu=False, max_posts=1, max_comments=20))
         row = self.rows()[0]
-        self.assertEqual(row["top_comments"], ["Bình luận A", "Bình luận B"])
+        self.assertEqual(row["top_comments"], normalize_comments(["Bình luận A", "Bình luận B"]))
         self.assertEqual(row["image_files"], ["ảnh.jpg"])
         self.assertEqual(row["ocr"], [{"text": "OCR"}])
         self.assertEqual(len(self.rows()), 1)
@@ -97,7 +98,7 @@ class PostPipelineTests(PersistenceFixture, unittest.IsolatedAsyncioTestCase):
              patch.object(pipeline, "download_images", new=AsyncMock(return_value=[])), \
              patch.object(Path, "replace", autospec=True, side_effect=deny_target), \
              patch.object(storage_files.time, "sleep"):
-            await collector.main(SimpleNamespace(ocr=False, gpu=False, max_posts=2, comments=20))
+            await collector.main(SimpleNamespace(ocr=False, gpu=False, max_posts=2, max_comments=20))
         page.close.assert_awaited_once()
         db = sqlite3.connect(storage.DB_PATH)
         self.addCleanup(db.close)
@@ -114,14 +115,14 @@ class PostPipelineTests(PersistenceFixture, unittest.IsolatedAsyncioTestCase):
             yield {"post_id": "1", "url": self.post().url, "text": self.post().text, "images": []}
 
         async def download(*args):
-            self.assertEqual(storage.load_post(db, "1")["top_comments"], ["Comment A"])
+            self.assertEqual(storage.load_post(db, "1")["top_comments"], normalize_comments(["Comment A"]))
             raise RuntimeError("image download interrupted")
 
         with patch.object(pipeline, "iter_source_posts", new=source), \
              patch.object(pipeline, "scrape_top_comments", new=AsyncMock(return_value=["Comment A"])), \
              patch.object(pipeline, "download_images", new=download):
-            await pipeline.collect_source_posts(None, None, db, {}, SimpleNamespace(max_posts=1, comments=20))
-        self.assertEqual(storage.load_post(db, "1")["top_comments"], ["Comment A"])
+            await pipeline.collect_source_posts(None, None, db, {}, SimpleNamespace(max_posts=1, max_comments=20))
+        self.assertEqual(storage.load_post(db, "1")["top_comments"], normalize_comments(["Comment A"]))
 
     async def test_downloaded_images_survive_ocr_failure(self):
         db = storage.init_db()
@@ -134,9 +135,30 @@ class PostPipelineTests(PersistenceFixture, unittest.IsolatedAsyncioTestCase):
         with patch.object(pipeline, "iter_source_posts", new=source), \
              patch.object(pipeline, "scrape_top_comments", new=AsyncMock(return_value=[])), \
              patch.object(pipeline, "download_images", new=AsyncMock(return_value=["downloaded.jpg"])):
-            await pipeline.collect_source_posts(None, None, db, {}, SimpleNamespace(max_posts=1, comments=0), ocr=ocr)
+            await pipeline.collect_source_posts(None, None, db, {}, SimpleNamespace(max_posts=1, max_comments=0), ocr=ocr)
         self.assertEqual(storage.load_post(db, "1")["image_files"], ["downloaded.jpg"])
         self.assertEqual(storage.load_post(db, "1")["ocr"], [])
+
+    async def test_existing_post_updates_full_text_and_refreshes_missing_comment_author(self):
+        db = storage.init_db()
+        self.addCleanup(db.close)
+        storage.save_post(db, {"post_id": "1", "url": self.post().url, "text": "Nội dung… Xem thêm",
+                              "top_comments": [{"comment_id": "10", "is_reply": False, "text": "Root"}],
+                              "image_files": ["keep.jpg"]})
+
+        async def source(*args):
+            yield {"post_id": "1", "url": self.post().url, "text": "Nội dung đầy đủ", "author": "Người viết"}
+
+        with patch.object(pipeline, "iter_source_posts", new=source), \
+             patch.object(pipeline, "scrape_top_comments", new=AsyncMock(return_value=[
+                 {"comment_id": "10", "is_reply": False, "author": "Người bình luận", "text": "Root"}])) as scrape:
+            await pipeline.collect_source_posts(None, None, db, {}, SimpleNamespace(max_posts=1, max_comments=1))
+        scrape.assert_awaited_once()
+        saved = storage.load_post(db, "1")
+        self.assertEqual(saved["text"], "Nội dung đầy đủ")
+        self.assertEqual(saved["author"], "Người viết")
+        self.assertEqual(saved["top_comments"][0]["author"], "Người bình luận")
+        self.assertEqual(saved["image_files"], ["keep.jpg"])
 
 
 if __name__ == "__main__":

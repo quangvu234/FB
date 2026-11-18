@@ -4,7 +4,7 @@ import re
 from urllib.parse import parse_qs, urlparse
 
 from fb_scraper.entities.parser import parse_entity
-from fb_scraper.common.urls import canonical_entity_url, entity_about_url
+from fb_scraper.common.urls import canonical_entity_url, entity_about_url, is_login_url
 
 
 # Chỉ đọc vùng chính; loại bài viết/bình luận để chúng không lẫn vào thông tin giới thiệu.
@@ -52,8 +52,7 @@ async def read_snapshot(page, url):
         is_about_page = True
     snapshot["about_page"] = is_about_page
 
-    current_path = urlparse(page.url).path.lower()
-    if "/checkpoint" in current_path or "/login" in current_path:
+    if is_login_url(page.url):
         snapshot["login_required"] = True
     if response and response.status >= 400:
         snapshot["unavailable"] = True

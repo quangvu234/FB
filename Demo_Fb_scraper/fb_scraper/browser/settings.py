@@ -5,15 +5,12 @@ import socket
 from pathlib import Path
 from urllib.parse import urlparse
 
-from dotenv import load_dotenv
-
 from fb_scraper.common.paths import PROJECT_ROOT
 
 DEFAULT_CDP_URL = "http://localhost:9222"
 LOCAL_CDP_URL = "http://127.0.0.1:9223"
 
-for env_path in (PROJECT_ROOT / ".env", PROJECT_ROOT / ".venv" / ".env"):
-    load_dotenv(env_path, override=False)
+# Các hàm bên dưới đọc os.environ; main.py nạp .env một lần khi khởi động (common/runtime.py).
 
 
 def use_system_chrome():

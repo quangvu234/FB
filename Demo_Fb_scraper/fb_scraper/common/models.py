@@ -8,6 +8,8 @@ from typing import Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
+from fb_scraper.common.comments import Comment
+
 EntityKind = Literal["profile", "group"]
 
 
@@ -15,11 +17,19 @@ class Post(BaseModel):
     """Một bài viết. Mỗi thuộc tính bên dưới là một trường dữ liệu."""
     model_config = ConfigDict(populate_by_name=True)
 
-    post_id: str | None = None
+    post_id: str | None = Field(default=None, validation_alias=AliasChoices("post_id", "post_key"))
     url: str = ""
     source: str = ""
     author: str = ""
-    text: str = ""
+    author_url: str = ""
+    text: str = Field(default="", validation_alias=AliasChoices("text", "content"))
+    source_id: int | None = None
+    source_type: Literal["profile", "page", "group"] | None = None
+    source_label: str | None = None
+    source_ref: str | None = None
+    is_shared: bool = False
+    original_post_key: str | None = None
+    media: list[dict] = Field(default_factory=list)
     posted_raw: str | None = None
     posted_at: str | None = None
     likes: int | None = None
@@ -37,7 +47,7 @@ class Post(BaseModel):
     )
     image_files: list[str] = Field(default_factory=list)
     ocr: list[dict] = Field(default_factory=list)
-    top_comments: list[str] = Field(default_factory=list)
+    top_comments: list[Comment] = Field(default_factory=list)
     entity_type: EntityKind | None = None
     entity_id: str | None = None
     collected_at: str | None = None
@@ -97,9 +107,13 @@ class SearchResult(BaseModel):
 
 
 class CollectionOptions(BaseModel):
-    """Tùy chọn thu thập. ge=0 nghĩa là số phải lớn hơn hoặc bằng 0."""
+    """Tùy chọn thu thập. ge=0 nghĩa là số phải lớn hơn hoặc bằng 0.
+
+    max_comments: số bình luận nổi bật cần lấy cho mỗi bài (tùy chọn --comments).
+    Khác với Post.comments là số bình luận Facebook hiển thị trên bài.
+    """
     info_only: bool = False
     max_posts: int = Field(default=20, ge=0)
-    comments: int = Field(default=0, ge=0)
+    max_comments: int = Field(default=0, ge=0)
     ocr: bool = False
     gpu: bool = False

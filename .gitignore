@@ -1,9 +1,11 @@
 # Bí mật và cấu hình máy cá nhân
 .env
 **/.env
+.env.*
+!.env.example
 
 # Hồ sơ Chrome: chứa cookie/phiên đăng nhập Facebook
-Demo_Fb_scraper/fb_profile/
+Demo_Fb_scraper/fb_profile*/
 
 # Dữ liệu thu thập được (database, JSONL, ảnh)
 Demo_Fb_scraper/data/
@@ -13,3 +15,5 @@ Demo_Fb_scraper/data/
 __pycache__/
 *.pyc
 *.tmp
+*.log
+.pytest_cache/

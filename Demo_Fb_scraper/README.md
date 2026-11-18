@@ -8,6 +8,44 @@ Project chạy bằng Python trên Windows/PowerShell. Các lệnh bên dưới 
 workspace ngoài, có thư mục con `Demo_Fb_scraper`.
 Nếu terminal đang ở cạnh main.py, bỏ tiền tố `Demo_Fb_scraper\` trong lệnh.
 
+## Dùng giao diện (khuyên dùng)
+
+Nhấp đúp **`Demo_Fb_scraper/start_ui.cmd`**, hoặc chạy từ workspace ngoài:
+
+```powershell
+.\Demo_Fb_scraper\.venv\Scripts\python.exe .\Demo_Fb_scraper\main.py web --open
+```
+
+Giao diện mở tại **http://127.0.0.1:8765**. Giữ terminal đang chạy; đóng giao diện
+bằng `Ctrl+C` tại terminal. Không cần cài thêm thư viện cho phần giao diện.
+Nếu cổng bị dùng, thêm `--port 8766`.
+
+`start_ui.cmd` tự mở Chrome bằng hồ sơ Facebook của project, với hai tab:
+**Facebook** và **giao diện thu thập**. Dùng lại các tab đang có nếu đã mở. Phiên
+đăng nhập đã lưu được giữ nguyên; nếu Facebook yêu cầu đăng nhập lại, thao tác
+ngay trong tab Facebook rồi quay về tab giao diện. Không tự bắt đầu thu thập.
+
+1. Chrome đã mở sẵn tab Facebook. Đăng nhập nếu cần. Nút **Mở Chrome đăng nhập**
+   (hoặc **Đăng nhập Facebook** trên màn hình nhỏ) dùng để mở lại khi bạn đã đóng tab.
+2. Giữ **Tự nhận diện**, nhập mỗi từ khóa hoặc URL Facebook trên một dòng. Có thể
+   trộn từ khóa, URL cá nhân/Trang và URL nhóm trong cùng lượt; URL trùng được bỏ qua.
+   Hoặc chọn riêng **Từ khóa**, **Cá nhân**, **Trang**, **Nhóm**.
+3. Chọn số bài tối đa mỗi nguồn, số bình luận/reply mỗi bài, bật OCR nếu cần.
+4. Bấm **Bắt đầu thu thập**. Theo dõi số nguồn đã xử lý, nhật ký và kết quả được lưu.
+5. Bấm một bài để xem nội dung và luồng bình luận/reply. Có thể tìm trong kết quả,
+   phân trang hoặc **Tải JSONL** trực tiếp từ SQLite.
+
+**Dừng thu thập** hủy tác vụ hiện tại và xuất dữ liệu đã có. Chỉ một lượt được chạy
+tại một thời điểm trong giao diện. Lịch sử lượt chạy được giữ trong phiên server;
+bài viết tiếp tục nằm trong SQLite sau khi đóng giao diện. Các giới hạn nội dung
+công khai của collector vẫn được áp dụng.
+
+Giao diện chạy cục bộ để kết nối Chrome trên máy, dùng lại `.env`, `fb_profile/`
+và `data/` hiện có. Không cần API key LLM để dùng giao diện. Lần đầu bật OCR có thể
+cần tải model EasyOCR.
+
+![Giao diện FB Collector](docs/ui-desktop.png)
+
 ## Cấu trúc
 
 Mỗi file Python dưới **300 dòng**, tính cả dòng trống và chú thích.
@@ -15,8 +53,10 @@ Mỗi file Python dưới **300 dòng**, tính cả dòng trống và chú thíc
 ```text
 Demo_Fb_scraper/
 ├── main.py                  # Điểm chạy chung
-├── .env                     # Cấu hình và API key
+├── .env                     # Cấu hình và API key (không commit)
+├── .env.example             # Mẫu .env, sao chép thành .env
 ├── requirements.txt
+├── start_ui.cmd             # Nhấp đúp để mở giao diện
 ├── README.md
 ├── fb_scraper/              # Mã nguồn ứng dụng
 │   ├── browser/             # Hồ sơ và kết nối Chrome
@@ -28,6 +68,8 @@ Demo_Fb_scraper/
 │   │   ├── reader.py
 │   │   ├── parser.py
 │   │   ├── comments.py
+│   │   ├── comment_reader.py # Đọc DOM bình luận và quan hệ reply
+│   │   ├── labels.py        # Nhãn bình luận dùng chung Python/JS
 │   │   └── pipeline.py
 │   ├── entities/            # Thông tin cá nhân, Trang, nhóm
 │   │   ├── collector.py
@@ -39,14 +81,29 @@ Demo_Fb_scraper/
 │   │   └── reader.py
 │   ├── agent/               # Thu thập bằng LLM
 │   │   └── mode.py
+│   ├── web/                 # Giao diện localhost, API, worker và tài nguyên tĩnh
 │   ├── storage/             # SQLite và xuất file
-│   │   ├── database.py
-│   │   ├── entities.py
-│   │   └── files.py
+│   │   ├── database.py      # API lưu và xuất bốn bảng
+│   │   ├── schema.sql       # sources/posts/comments/media và ràng buộc
+│   │   ├── schema.py        # Khởi tạo và kiểm tra schema
+│   │   ├── migration.py     # Sao lưu và chuyển dữ liệu cũ
+│   │   ├── source_store.py  # Cá nhân/Trang/nhóm và metadata
+│   │   ├── post_store.py    # Giao dịch lưu bài
+│   │   ├── comment_store.py # Bình luận và FK reply
+│   │   ├── media_store.py   # Media, SHA-256, OCR
+│   │   ├── records.py       # Bản ghi chuẩn hóa và projection
+│   │   ├── entity_store.py  # Adapter thông tin nguồn
+│   │   ├── sql.py           # Chuyển dòng SQLite thành dictionary
+│   │   ├── files.py         # Ghi file an toàn khi bị khóa
+│   │   └── cli.py           # Lệnh storage
 │   └── common/              # Thành phần dùng chung
+│       ├── runtime.py       # UTF-8 terminal, nạp .env
 │       ├── paths.py
 │       ├── models.py
+│       ├── comments.py       # Schema bình luận, tương thích và gộp theo ID
 │       ├── urls.py
+│       ├── numbers.py       # 1,2K -> 1200
+│       ├── page_actions.py  # human_pause, expand_see_more
 │       └── ocr.py
 ├── tests/                   # Kiểm thử và dữ liệu giả
 ├── scripts/                 # Công cụ hỗ trợ
@@ -54,9 +111,9 @@ Demo_Fb_scraper/
 │   └── check_code_size.py
 ├── docs/
 │   └── HUONG_DAN_DOC_CODE.md
-├── data/                    # Database, snapshot, ảnh
-├── fb_profile/              # Hồ sơ Chrome giữ phiên Facebook
-└── .venv/                   # Môi trường Python
+├── data/                    # Database, snapshot, ảnh (không commit)
+├── fb_profile/              # Hồ sơ Chrome giữ phiên Facebook (không commit)
+└── .venv/                   # Môi trường Python (không commit)
 ```
 
 Các thư mục Python có file `__init__.py` để Python nhận diện package.
@@ -69,7 +126,8 @@ File này chỉ mô tả thư mục, không chạy trình duyệt hay thu thập
 | `search` | `fb_scraper/search/collector.py` |
 | `agent` | `fb_scraper/agent/mode.py` |
 | `browser` | `fb_scraper/browser/connection.py` |
-| `storage` | `fb_scraper/storage/database.py` |
+| `storage` | `fb_scraper/storage/cli.py` |
+| `web` | `fb_scraper/web/server.py` |
 
 `main.py` chỉ chuyển lệnh và tùy chọn terminal tới CLI tương ứng.
 Các module nghiệp vụ tiếp tục gọi hàm Python trực tiếp.
@@ -81,9 +139,21 @@ vào các thư mục trên; hãy dùng các lệnh mới bên dưới.
 Cấu hình, database và hồ sơ Chrome tiếp tục nằm tại thư mục gốc này,
 kể cả khi chạy lệnh từ terminal ở thư mục khác.
 
+## Cài đặt
+
+```powershell
+python -m venv .\Demo_Fb_scraper\.venv
+.\Demo_Fb_scraper\.venv\Scripts\python.exe -m pip install -r .\Demo_Fb_scraper\requirements.txt
+Copy-Item .\Demo_Fb_scraper\.env.example .\Demo_Fb_scraper\.env
+```
+
+Điền API key vào `.env`. File `.env`, `fb_profile/`, `data/` và `.venv/` nằm
+trong `.gitignore`: chúng chứa API key, cookie đăng nhập Facebook và dữ liệu đã
+thu thập, nên không được commit.
+
 ## Hồ sơ Chrome riêng cho automation
 
-Cấu hình hiện tại trong `Demo_Fb_scraper/.env`:
+Cấu hình mặc định trong `Demo_Fb_scraper/.env` (giống `.env.example`):
 
 ```dotenv
 USE_SYSTEM_CHROME=0
@@ -161,17 +231,81 @@ và [cơ chế xác nhận khi kết nối Chrome cá nhân](https://developer.c
 .\Demo_Fb_scraper\.venv\Scripts\python.exe .\Demo_Fb_scraper\main.py posts --max-posts 20 --comments 20
 ```
 
-Nguồn nằm trong `SOURCES` của `fb_scraper/posts/collector.py` (hiện là tìm bài theo từ
-khóa Messi). `--ocr` bật OCR ảnh; `--gpu` chọn GPU cho OCR.
-Collector bổ sung bình luận cho bài đã có khi chưa đạt số lượng yêu cầu, giữ
+Đổi từ khóa ngay trên dòng lệnh, nhập tiếng Việt bình thường; chương trình tự
+encode URL, không cần sửa URL trong code:
+
+```powershell
+.\Demo_Fb_scraper\.venv\Scripts\python.exe .\Demo_Fb_scraper\main.py posts --keyword "việc làm online tại nhà" --max-posts 20 --comments 5
+```
+
+Có thể lặp `--keyword "từ khóa khác"` để tìm nhiều từ khóa; `--max-posts` áp dụng
+cho mỗi từ khóa. Khi có `--keyword`, chỉ tìm các từ khóa được truyền vào.
+Khi không truyền, dùng danh sách `KEYWORDS` trong `fb_scraper/posts/collector.py`
+(hiện là `việc làm online tại nhà`); danh sách này cũng chỉ cần nhập chữ thường.
+`--ocr` bật OCR ảnh; `--gpu` chọn GPU cho OCR.
+Collector bổ sung bình luận cho bài đã có khi chưa đạt số lượng yêu cầu hoặc còn thiếu ID/quan hệ/tên người viết, giữ
 ảnh/OCR đã lưu. URL tìm kiếm không được dùng làm permalink; các URL
 `/share/p/`, `story_fbid`, `fbid` và `v` được xử lý riêng.
+
+Collector mở các nút **Xem thêm/See more** trước khi đọc, chờ nội dung tải xong và
+đọc lại reply vừa được tải. Nếu thẻ bài vẫn bị thu gọn, thử đọc đúng permalink trong
+tab phụ. Khi thu thập lại bài đã có, tên người viết và nội dung đầy đủ được cập nhật;
+bản rút gọn không ghi đè bản đầy đủ. Danh sách kết quả và cửa sổ chi tiết hiển thị
+toàn bộ nội dung đã lưu, không giới hạn ở hai dòng.
+
+### Cấu trúc bình luận và reply
+
+`top_comments` là DTO trung gian của collector. Các trường chính gồm:
+
+| Trường | Ý nghĩa |
+| --- | --- |
+| `comment_id` | ID riêng của bình luận/reply, không phải ID của bình luận gốc |
+| `parent_comment_id` | ID cha trực tiếp khi xác định được từ DOM |
+| `root_comment_id` | ID bình luận gốc của luồng |
+| `is_reply` | `false`: bình luận gốc; `true`: reply; `null`: chưa xác định |
+| `author` | Tên người viết hiển thị |
+| `author_url` | URL người viết khi có |
+| `text` | Nội dung riêng của bình luận, không ghép các reply con |
+| `url` | Permalink bình luận, giữ `comment_id` và `reply_comment_id` |
+| `posted_raw` | Thời gian hiển thị trên permalink nếu có |
+
+Ví dụ rút gọn một luồng có reply hai cấp:
+
+```json
+"top_comments": [
+  {"comment_id": "100", "parent_comment_id": null, "root_comment_id": "100", "is_reply": false, "author": "A", "text": "Cho mình hỏi thông tin"},
+  {"comment_id": "101", "parent_comment_id": "100", "root_comment_id": "100", "is_reply": true, "author": "B", "text": "Bạn muốn hỏi gì?"},
+  {"comment_id": "102", "parent_comment_id": "101", "root_comment_id": "100", "is_reply": true, "author": "A", "text": "Lịch làm việc thế nào?"}
+]
+```
+
+Trong DTO, `post_id`/`comment_id` là khóa Facebook. SQLite lưu bình luận ở bảng
+`comments`: `post_id` tham chiếu ID số của `posts`, `parent_comment_id` tham chiếu
+ID số của `comments`. Khóa Facebook nằm ở `post_key`/`comment_key`.
+Xem [schema và ví dụ JOIN](docs/DATABASE_SCHEMA.md) để phân biệt hai loại định danh.
+Khi chỉ có permalink cho biết gốc luồng mà không biết cha trực tiếp,
+`parent_comment_id` để `null`; không suy ra quan hệ từ tên người được nhắc trong text.
+
+`--comments` giới hạn tổng bản ghi đọc trong mỗi lượt cho mỗi bài, gồm cả reply.
+Collector mở nút xem reply trước khi kiểm tra giới hạn. Khi bổ sung cho bài đã có,
+các bản ghi cũ được giữ, nên tổng tích lũy có thể lớn hơn giới hạn của một lượt.
+Cùng nội dung nhưng ID khác nhau vẫn được lưu riêng; cùng ID được cập nhật.
+ID số và global ID base64 dạng `comment:<post>_<comment>` được đối chiếu về cùng ID
+bình luận để cập nhật dữ liệu cũ mà không tạo bản ghi trùng.
+
+Dữ liệu chuỗi cũ vẫn đọc được và khi xuất sẽ thành object giữ nguyên `text`, các
+trường ID/quan hệ chưa biết để `null`. Chạy lại collector với `--comments` lớn hơn 0
+để đọc lại metadata/tên/nội dung còn bị rút gọn, kể cả khi danh sách cũ đã đủ số lượng. Không thể khôi phục
+chính xác quan hệ reply chỉ từ chuỗi đã lưu; nội dung cũ được giữ nếu chưa đối chiếu được.
 
 ## Cá nhân/Trang và nhóm
 
 ```powershell
 # Chỉ lấy thông tin Giới thiệu của cá nhân/Trang
 .\Demo_Fb_scraper\.venv\Scripts\python.exe .\Demo_Fb_scraper\main.py entity "https://www.facebook.com/zuck" --type profile --info-only
+
+# Thu thập một Trang cụ thể và lưu source_type=page
+.\Demo_Fb_scraper\.venv\Scripts\python.exe .\Demo_Fb_scraper\main.py entity "https://www.facebook.com/ten.trang" --type page --max-posts 5 --comments 10
 
 # Chỉ lấy thông tin nhóm
 .\Demo_Fb_scraper\.venv\Scripts\python.exe .\Demo_Fb_scraper\main.py entity "https://www.facebook.com/groups/pythonvietnam" --type group --info-only
@@ -228,8 +362,7 @@ Kết nối agent dùng `keep_alive=True`; kết thúc chỉ ngắt kết nối 
 Dữ liệu luôn ở `data` cạnh `main.py`, kể cả khi chạy từ thư mục khác.
 
 - `posts.db`: SQLite, dữ liệu gốc; commit ngay sau từng bài/đối tượng/kết quả tìm kiếm.
-- `posts.jsonl`, `profiles.jsonl`, `groups.jsonl`: snapshot tương ứng.
-- `search_results.jsonl`: snapshot nhật ký từ bảng `search_results`.
+- `sources.jsonl`, `posts.jsonl`, `comments.jsonl`, `media.jsonl`: snapshot của bốn bảng.
 - `data_agent.json`: các bài thu được trong lượt chạy agent.
 - `images`: ảnh do DOM collector tải.
 
@@ -238,14 +371,16 @@ ngắt thông thường. Không query và ghi đè toàn bộ JSONL sau mỗi l�
 text/comment/ảnh/OCR. Nếu tiến trình bị tắt cưỡng bức, SQLite giữ những lần
 commit trước đó; chạy lệnh xuất lại để cập nhật snapshot.
 
-Các trường danh sách trong JSONL bài viết hiện là mảng JSON, thay cho chuỗi JSON
-lồng trong chuỗi ở bản cũ. SQLite tiếp tục dùng TEXT cho các cột danh sách và
-được đọc/ghi qua storage. Cập nhật từng phần giữ các trường đã có khi caller
-không truyền lại chúng.
+SQLite dùng bốn bảng quan hệ. Bình luận và media không còn là danh sách JSON trong
+cột posts. JSONL giữ đúng ID/khóa ngoại; mỗi dòng posts bổ sung nguồn, bình luận và
+media liên quan. Cập nhật từng phần giữ các trường đã có khi caller bỏ qua chúng.
+Tên người viết, URL và metadata bổ sung vẫn được giữ. Chi tiết tại
+[DATABASE_SCHEMA.md](docs/DATABASE_SCHEMA.md).
 
-Lần đầu nâng cấp, nhật ký `search_results.jsonl` cũ được nhập vào SQLite trong
-một transaction và giữ các lần lặp. Nếu file cũ sai định dạng, migration dừng
-và giữ nguyên file, tránh ghi đè lịch sử.
+Lần đầu nâng cấp, project sao lưu `posts.before-v3-<mã>.db` trước khi chuyển schema.
+Thông tin profiles/groups và lịch sử tìm kiếm chuyển vào metadata của sources;
+bình luận/ảnh/OCR chuyển sang comments/media trong một transaction. Nếu lỗi,
+rollback và giữ database cũ. Các snapshot cũ được giữ để đối chiếu, không cập nhật nữa.
 
 Khi file xuất bị Windows khóa, storage thử lại rồi giữ snapshot mới ở
 `*.pending.jsonl`/`*.pending.json`. Nếu bản pending cũng bị khóa, giữ file tạm
@@ -263,13 +398,19 @@ bài viết của lượt đó cũng đã nằm trong SQLite.
 ## Kiểm thử
 
 ```powershell
-.\Demo_Fb_scraper\.venv\Scripts\python.exe -B -m unittest discover -s .\Demo_Fb_scraper\tests -t .\Demo_Fb_scraper -p "test_*.py" -v
+.\Demo_Fb_scraper\.venv\Scripts\python.exe -X utf8 -B -m unittest discover -s .\Demo_Fb_scraper\tests -t .\Demo_Fb_scraper -p "test_*.py" -v
 ```
 
 Kiểm thử dùng database tạm và browser/LLM giả: khóa file Windows, phục hồi khi
 ngắt, migration dữ liệu cũ, số lần xuất snapshot, chia sẻ kết nối khi tìm kiếm
 và từ chối hồ sơ Chrome không khớp. Không thu thập Facebook hoặc gọi API LLM.
-Kiểm tra predicate JavaScript được bỏ qua khi máy chưa có Node.
+Kiểm tra predicate JavaScript được bỏ qua khi máy chưa có Node. Có thể dùng Node
+đi kèm Playwright bằng cách thêm `.venv\Lib\site-packages\playwright\driver`
+vào `PATH` trước khi chạy test.
+
+`test_comment_dom.py` chạy thêm Chrome headless trên HTML cục bộ để kiểm tra ID,
+reply nhiều cấp và tách nội dung cha/con; bỏ qua nếu không tìm thấy Chrome.
+Các kiểm thử này dùng hồ sơ tạm, không truy cập Facebook hoặc gọi LLM.
 
 Kiểm tra giới hạn độ dài trong main.py, fb_scraper/, tests/ và scripts/:
 

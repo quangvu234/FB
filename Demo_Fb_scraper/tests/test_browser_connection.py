@@ -10,6 +10,8 @@ from fb_scraper.agent import mode as agent_mode
 from fb_scraper.browser import connection as connection
 from fb_scraper.browser import settings as settings
 from fb_scraper.browser import launcher as launcher
+
+
 class BrowserConnectionTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()

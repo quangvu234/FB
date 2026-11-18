@@ -1,9 +1,9 @@
 """Ghép dữ liệu DOM thành bản ghi profile hoặc nhóm; không làm I/O."""
 import re
 
+from fb_scraper.common.numbers import NUMBER, parse_count
 from fb_scraper.entities.text import (
-    NUMBER, SECTION_LABELS, UI_LINES, entity_identity,
-    parse_display_count, prepare_snapshot, section_lines, text_lines,
+    SECTION_LABELS, UI_LINES, entity_identity, prepare_snapshot, section_lines, text_lines,
 )
 from fb_scraper.common.urls import canonical_entity_url, entity_about_url
 from fb_scraper.common.models import ENTITY_MODELS
@@ -138,7 +138,7 @@ def _read_profile_fields(record, readable_pages):
             follower_match = re.search(r"(?:Followed by)\s*" + NUMBER + r"\s*(?:people)?", page_text, re.I)
 
         if follower_match:
-            record["followers_count"] = parse_display_count(follower_match.group(1))
+            record["followers_count"] = parse_count(follower_match.group(1))
             record["followers_raw"] = follower_match.group(0).strip()
 
         for field, labels in field_labels.items():
@@ -203,7 +203,7 @@ def _read_group_fields(record, readable_pages):
                 continue
 
             count_text = member_match.group(1)
-            count = parse_display_count(count_text)
+            count = parse_count(count_text)
             is_exact = not re.search(r"[a-zA-Zà-ỹ]", count_text)
 
             candidate = {

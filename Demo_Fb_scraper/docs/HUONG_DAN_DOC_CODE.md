@@ -26,22 +26,23 @@ def run_cli(argv=None):
     parser = argument_parser()
     args = parser.parse_args(argv)
     asyncio.run(main(args))
-
-
-if __name__ == "__main__":
-    run_cli()
 ```
 
 Ví dụ trên lược bớt phần bắt lỗi để tập trung vào luồng chạy:
 
-1. `if __name__ == "__main__"`: chạy phần này khi mở file bằng lệnh Python.
-2. `run_cli(argv)`: đọc các tùy chọn terminal mà `main.py` chuyển tới.
-3. `argument_parser()`: khai báo những tham số được phép nhập trên terminal.
-4. `parse_args(argv)`: đọc tham số người dùng đã nhập.
-5. `asyncio.run(main(args))`: bắt đầu thực hiện công việc chính.
+1. `run_cli(argv)`: đọc các tùy chọn terminal mà `main.py` chuyển tới.
+2. `argument_parser()`: khai báo những tham số được phép nhập trên terminal.
+3. `parse_args(argv)`: đọc tham số người dùng đã nhập.
+4. `asyncio.run(main(args))`: bắt đầu thực hiện công việc chính.
+
+Chỉ `main.py` có `if __name__ == "__main__"`. Trước khi gọi `run_cli()`, `main.py`
+thiết lập terminal UTF-8 và nạp `.env` một lần (`fb_scraper/common/runtime.py`),
+nên các module con không tự làm lại hai việc này.
 
 Với lệnh `main.py posts --max-posts 20 --comments 5`, `args.max_posts`
-có giá trị `20`, còn `args.comments` có giá trị `5`.
+có giá trị `20`, còn `args.max_comments` có giá trị `5`. Tùy chọn `--comments`
+được lưu vào `max_comments` (`dest="max_comments"`) để không nhầm với trường
+`comments` của bài viết, là số bình luận Facebook hiển thị.
 
 Trong `main()`, đọc lần lượt từng lời gọi hàm. Khi cần biết chi tiết một bước,
 mở hàm được gọi rồi quay lại `main()` sau khi hiểu xong bước đó.
@@ -83,17 +84,16 @@ làm quen với code mà chưa cần hiểu cách mở trình duyệt.
 | `post` | Dictionary hoặc model chứa dữ liệu một bài viết |
 | `record` | Dictionary chuẩn bị ghi vào database hoặc xuất ra JSON |
 | `raw`, `snapshot` | Dữ liệu vừa đọc từ giao diện, trước khi làm sạch |
-| `source`, `src` | Nguồn thu thập, có URL và tên nguồn |
+| `source` | Nguồn thu thập, có URL và tên nguồn dạng `loại:giá trị` (`kw:...`, `profile:...`, `group:...`, `agent:...`) |
 | `page` | Một tab trình duyệt |
-| `context`, `ctx` | Nhóm các tab dùng chung phiên đăng nhập |
-| `db`, `database` | Kết nối đến SQLite |
+| `context` | Nhóm các tab dùng chung phiên đăng nhập |
+| `db` | Kết nối đến SQLite |
 | `kind` | Loại đối tượng: `profile` hoặc `group` |
-| `options`, `args` | Tùy chọn thu thập hoặc tham số terminal |
-| `done`, `known_post_ids` | Tập ID bài đã lưu, dùng để tránh trùng |
+| `args` | Tham số terminal do argparse đọc |
+| `options` | `CollectionOptions` đã kiểm tra (max_posts, max_comments, ocr...) |
+| `known_post_ids` | Tập ID bài đã lưu, dùng để tránh trùng |
 | `ocr`, `ocr_engine` | Bộ đọc chữ từ ảnh |
-
-Một số hàm giữ tên tham số ngắn từ trước để các chỗ gọi hàm tiếp tục hoạt động.
-Biến bên trong các đoạn xử lý dài dùng tên mô tả đầy đủ hơn.
+| `comments` / `top_comments` / `max_comments` | Số bình luận hiển thị / danh sách object bình luận và reply / số bản ghi cần lấy mỗi lượt |
 
 ## 4. Những từ khóa cần biết thêm
 
@@ -122,8 +122,8 @@ cho đoạn code đang `await`.
 bên gọi ngay. Sau khi bên gọi lưu bài, vòng lặp tiếp tục yêu cầu bài kế tiếp.
 
 ```python
-async for post in iter_source_posts(page, source, maximum_posts):
-    save_post(database, post)
+async for post in iter_source_posts(page, source, max_posts):
+    save_post(db, post)
 ```
 
 Nhờ vậy, nội dung được lưu dần. Nếu bước tải ảnh hoặc đọc trang tiếp theo gặp
@@ -183,7 +183,7 @@ không được truyền lại.
 Trong agent, nó dùng để bổ sung URL chuẩn, ID và tên nguồn trước khi lưu.
 
 `Profile(Entity)` và `Group(Entity)` kế thừa những trường chung của `Entity`.
-`FBPost` trong `fb_scraper/agent/mode.py` là tên khác của cùng class `Post` từ `fb_scraper/common/models.py`.
+Agent dùng trực tiếp `Post` và `PostBatch` từ `fb_scraper/common/models.py`.
 
 ## 6. Python và JavaScript trong cùng file
 
@@ -199,13 +199,24 @@ sau đó trả dữ liệu về Python. Python tiếp tục xử lý dictionary/
 Bạn có thể theo dõi luồng Python trước, rồi học phần DOM/JavaScript khi cần
 thay đổi cách nhận diện bài viết trên giao diện Facebook.
 
+Một số quy tắc được dùng ở cả Python lẫn JavaScript nên chỉ viết một lần rồi
+chèn vào chuỗi JS bằng `.replace("__TÊN__", ...)`:
+
+- `POST_URL_JS` (`fb_scraper/common/urls.py`): nhận diện permalink bài viết.
+- `COMMENT_LABEL_JS` (`fb_scraper/posts/labels.py`): nhận diện nhãn bình luận.
+
+Trong `EXTRACT_JS`, hàm `findRoots()` tìm khung bài theo 3 cách dự phòng, còn
+`readText()` chọn nội dung bài theo thứ tự ưu tiên.
+
 Biểu thức `re.search()` và `re.fullmatch()` dùng regex để nhận diện mẫu văn bản
 hoặc URL. `r"..."` giữ dấu gạch chéo trong chuỗi regex. `match.group(1)` lấy
 nhóm dữ liệu đầu tiên mà mẫu đã nhận diện được.
 
-Các chuỗi `SELECT`, `INSERT`, `UPDATE` trong `fb_scraper/storage/database.py` và
-`fb_scraper/storage/entities.py` là lệnh SQL gửi cho
-SQLite. Trong `db.execute(query, values)`, các giá trị trong `values` lần lượt
+Các chuỗi `SELECT`, `INSERT`, `UPDATE` trong `fb_scraper/storage/` là lệnh SQL gửi cho
+SQLite. Các module `source_store.py`, `post_store.py`, `comment_store.py`, `media_store.py`
+ghi bốn bảng sources/posts/comments/media. `post_store.py` và `comment_store.py` dùng
+`INSERT ... ON CONFLICT DO UPDATE` để giữ ổn định ID khi đã có post_key/comment_key.
+Trong `db.execute(query, values)`, các giá trị trong `values` lần lượt
 điền vào những dấu `?` của `query`. Project tách dữ liệu khỏi câu lệnh SQL theo
 cách này để SQLite xử lý đúng cả nội dung có dấu nháy.
 
@@ -278,8 +289,15 @@ Khi cần tìm sâu hơn:
 - Cấu hình Chrome ở `fb_scraper/browser/settings.py`; mở Chrome ở `fb_scraper/browser/launcher.py`.
 - Thông tin đối tượng đi qua `fb_scraper/entities/collector.py` → `fb_scraper/entities/reader.py` →
   `fb_scraper/entities/parser.py`. Các hàm xử lý dòng văn bản ở `fb_scraper/entities/text.py`.
-- `fb_scraper/storage/entities.py` ghi bản ghi cá nhân/nhóm vào SQLite.
+- `fb_scraper/storage/source_store.py` ghi cá nhân/Trang/nhóm vào bảng sources.
+- `fb_scraper/storage/schema.sql` định nghĩa bốn bảng và ràng buộc khóa ngoại.
+- `fb_scraper/storage/records.py` dựng bản ghi chuẩn hóa hoặc DTO cho collector/giao diện.
+- `docs/DATABASE_SCHEMA.md` giải thích ID nội bộ, khóa Facebook, migration và ví dụ JOIN.
 - `fb_scraper/storage/files.py` xử lý file tạm, thử lại khi khóa file và giữ bản pending.
+- `fb_scraper/storage/cli.py` là lệnh `storage --export-jsonl`.
+- `fb_scraper/common/numbers.py` đổi số hiển thị (1,2K; 56.060) thành số nguyên.
+- `fb_scraper/common/page_actions.py` có `human_pause()` và `expand_see_more()`.
+- `is_login_url()` trong `fb_scraper/common/urls.py` nhận biết trang đăng nhập/checkpoint.
 
 Để kiểm tra số dòng từ workspace ngoài:
 
@@ -297,7 +315,7 @@ Nếu một file tăng đến 300 dòng, script báo lỗi để bạn tách ti�
 - `fb_scraper/search/`: tìm URL theo từ khóa.
 - `fb_scraper/agent/`: chế độ LLM điều khiển trình duyệt.
 - `fb_scraper/storage/`: thao tác SQLite và xuất JSON/JSONL.
-- `fb_scraper/common/`: models, URL, OCR, đường dẫn dùng chung.
+- `fb_scraper/common/`: models, URL, số, OCR, thao tác trang, đường dẫn và khởi động dùng chung.
 - `tests/`: kiểm thử; `scripts/`: công cụ hỗ trợ; `docs/`: tài liệu.
 
 Trong `from fb_scraper.posts.pipeline import collect_source_posts`, mỗi dấu

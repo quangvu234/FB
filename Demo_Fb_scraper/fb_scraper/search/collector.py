@@ -5,14 +5,15 @@ python main.py search "Python Việt Nam" --type group --max-results 20
 """
 import argparse
 import asyncio
-import sys
-from urllib.parse import urlparse
 
 from fb_scraper.browser.connection import browser_context
 from fb_scraper.entities.collector import collect_entities
 from fb_scraper.common.models import CollectionOptions
+from fb_scraper.common.urls import is_login_url
 from fb_scraper.search.reader import iter_keyword_results
 from fb_scraper.storage import database as storage
+
+
 # Kiểm tra từ khóa/giới hạn trước khi kết nối Chrome và loại từ khóa nhập trùng.
 def validate_args(args):
     """Kiểm tra giới hạn và chuẩn hóa danh sách từ khóa trước khi mở Chrome."""
@@ -78,8 +79,7 @@ async def main(args):
 
                         except Exception as error:
                             print(f"  Lỗi tìm {kind} ({type(error).__name__}): {error}", flush=True)
-                            current_path = urlparse(page.url).path
-                            if "/login" in current_path or "/checkpoint" in current_path:
+                            if is_login_url(page.url):
                                 return
             finally:
                 await page.close()
@@ -112,17 +112,9 @@ def argument_parser():
 
 
 def run_cli(argv=None):
-    for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, "reconfigure"):
-            stream.reconfigure(encoding="utf-8")
-
     parser = argument_parser()
     args = parser.parse_args(argv)
     try:
         asyncio.run(main(args))
     except (ValueError, RuntimeError) as exc:
         parser.exit(1, f"LỖI: {exc}\n")
-
-
-if __name__ == "__main__":
-    run_cli()

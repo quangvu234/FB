@@ -7,6 +7,9 @@ from unittest.mock import AsyncMock, patch
 
 from fb_scraper.agent import mode as agent_mode
 from fb_scraper.storage import database as storage
+from fb_scraper.storage.records import post_view
+
+
 class PersistenceFixture:
     """Chỉ cung cấp dữ liệu/hàm hỗ trợ; các ca kiểm thử nằm trong test_*.py."""
     def setUp(self):
@@ -30,10 +33,10 @@ class PersistenceFixture:
         return result
 
     def rows(self):
-        return [json.loads(line) for line in storage.JSONL_PATH.read_text(encoding="utf-8").splitlines()]
+        return [post_view(json.loads(line)) for line in storage.JSONL_PATH.read_text(encoding="utf-8").splitlines()]
 
     def post(self, number=1):
-        return agent_mode.FBPost(
+        return agent_mode.Post(
             url=f"https://www.facebook.com/example/posts/{number}",
             author="Tác giả", text="Nội dung bài viết dùng để kiểm tra lưu dữ liệu.",
         )

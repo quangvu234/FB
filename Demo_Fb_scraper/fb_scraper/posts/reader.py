@@ -1,110 +1,153 @@
 """Đọc và cuộn nguồn Facebook, trả từng bài hợp lệ cho bên gọi."""
-import asyncio
 import random
 
 from playwright.async_api import Page
 
-from fb_scraper.common.urls import POST_URL_JS
+from fb_scraper.common.page_actions import expand_see_more, human_pause
+from fb_scraper.common.content import is_collapsed_text
+from fb_scraper.posts.details import complete_post
+from fb_scraper.common.urls import POST_URL_JS, is_login_url
+from fb_scraper.posts.labels import COMMENT_LABEL_JS
 from fb_scraper.posts.parser import parse_article
 
 
-# Dùng role=article nếu có; một số phiên bản Facebook bỏ role này và dùng
-# data-ad-comet-preview="message" cho nội dung bài viết.
+# Facebook giấu permalink ở link thời gian (href="?__cft__..." hoặc "#") và chỉ điền
+# URL thật khi link được rê chuột/focus. Script này phát sự kiện focus/mouseover cho
+# các link đó để React điền href, không cần di chuột thật và không bấm vào link.
+REVEAL_LINKS_JS = r"""() => {
+  const hidden = document.querySelectorAll('[role="main"] a[href^="?"], [role="main"] a[href="#"]');
+  for (const link of hidden) {
+    link.dispatchEvent(new FocusEvent('focusin', {bubbles: true}));
+    link.dispatchEvent(new MouseEvent('mouseover', {bubbles: true}));
+  }
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  return hidden.length;
+}"""
+
 # Khối chuỗi bên dưới là JavaScript chạy trong Chrome qua page.evaluate(), không phải Python.
-EXTRACT_JS = """
+# Tìm khung bài theo 4 cách, dùng cách sau khi cách trước không ra kết quả:
+#   1. div[role="article"] (giao diện cũ);
+#   2. các thẻ con trực tiếp của role=feed (trang tìm kiếm/nhóm hiện tại);
+#   3. đi ngược từ data-ad-comet-preview="message" (nội dung bài) lên khung có permalink;
+#   4. đi ngược từ permalink lên khung có tiêu đề tác giả và hàng nút tương tác.
+EXTRACT_JS = r"""
 () => {
   const postLink = __POST_URL_PREDICATE__;
-  let roots = [...document.querySelectorAll('div[role="article"]')]
-    .filter(el => el.innerText.trim() && !el.parentElement.closest('[role="article"]') &&
-      !/^(Comment (by|from)|Reply by|Bình luận (của|dưới tên|bởi)|Trả lời (của|dưới tên))/i.test(el.getAttribute('aria-label') || ''));
+  const commentLabel = __COMMENT_LABEL__;
+  // Vùng bình luận: nhãn bắt đầu bằng Comment/Reply/Bình luận/Trả lời.
+  const commentArea = /^(Comment|Reply|Bình luận|Trả lời)/i;
+  const MESSAGE = '[data-ad-comet-preview="message"], [data-ad-preview="message"]';
 
-  if (!roots.length) {
-    const uniqueRoots = new Set();
-    for (const message of document.querySelectorAll(
-      '[data-ad-comet-preview="message"], [data-ad-preview="message"]'
-    )) {
-      let node = message;
-      while (node && node !== document.body) {
-        const hasPostLink = [...node.querySelectorAll('a[href]')]
-          .some(a => postLink(a.href));
-        if (hasPostLink && node.querySelectorAll('[role="button"]').length >= 3) {
-          uniqueRoots.add(node);
-          break;
-        }
-        node = node.parentElement;
+  const inComment = node =>
+    commentArea.test(node.closest('[role="article"][aria-label]')?.getAttribute('aria-label') || '');
+  const visibleLongText = node => node.getClientRects().length && node.innerText.trim().length >= 20;
+  const unique = items => [...new Set(items.filter(Boolean))];
+  const contentText = node => {
+    let text = node.innerText.trim();
+    for (const control of node.querySelectorAll('button, [role="button"], a')) {
+      const label = control.innerText?.trim() || '';
+      if (/^(?:Xem bớt|Ẩn bớt|See less)$/i.test(label)) {
+        const index = text.lastIndexOf(label);
+        if (index >= 0) text = text.slice(0, index) + text.slice(index + label.length);
       }
     }
-    roots = [...uniqueRoots];
-  }
+    return text.trim();
+  };
 
-  // Giao diện profile mới có thể bỏ cả role=article lẫn data-ad-preview.
-  // Tìm thẻ bài bao quanh permalink, tiêu đề tác giả và hàng nút tương tác.
-  if (!roots.length) {
-    const uniqueRoots = new Set();
+  function findRoots() {
+    const articles = [...document.querySelectorAll('div[role="article"]')].filter(el =>
+      el.innerText.trim() && !el.parentElement.closest('[role="article"]') &&
+      !commentLabel.test(el.getAttribute('aria-label') || ''));
+    if (articles.length) return articles;
+
+    // Trang tìm kiếm/nhóm mới: mỗi bài là một thẻ con trực tiếp của role=feed.
+    const feedItems = [...document.querySelectorAll('[role="feed"] > *')].filter(el =>
+      el.innerText.trim().length >= 20 && el.querySelectorAll('[role="button"]').length >= 3);
+    if (feedItems.length) return feedItems;
+
+    const fromMessages = new Set();
+    for (const message of document.querySelectorAll(MESSAGE)) {
+      for (let node = message; node && node !== document.body; node = node.parentElement) {
+        const hasPostLink = [...node.querySelectorAll('a[href]')].some(a => postLink(a.href));
+        if (hasPostLink && node.querySelectorAll('[role="button"]').length >= 3) {
+          fromMessages.add(node);
+          break;
+        }
+      }
+    }
+    if (fromMessages.size) return [...fromMessages];
+
+    // Giao diện profile mới có thể bỏ cả role=article lẫn data-ad-preview.
+    const fromLinks = new Set();
     for (const link of document.querySelectorAll('a[href]')) {
       if (!postLink(link.href)) continue;
       let node = link.parentElement;
       while (node && node !== document.body && node.getAttribute('role') !== 'main') {
         if (node.querySelector('h2, h3, h4, strong a') &&
             node.querySelectorAll('[role="button"]').length >= 3 && node.innerText.trim().length >= 20) {
-          uniqueRoots.add(node);
+          fromLinks.add(node);
           break;
         }
         node = node.parentElement;
       }
     }
-    roots = [...uniqueRoots].filter(node => ![...uniqueRoots].some(other => node !== other && node.contains(other)));
+    // Chỉ giữ khung nhỏ nhất, bỏ khung ngoài đang chứa một khung bài khác.
+    return [...fromLinks].filter(node => ![...fromLinks].some(other => node !== other && node.contains(other)));
   }
 
-  return roots.map(el => ({
+  // Nội dung bài: ưu tiên vùng message, rồi blockquote, rồi các khối chữ dài, cuối cùng là toàn bộ khung.
+  function readText(el) {
+    const messages = unique([...el.querySelectorAll(MESSAGE)].filter(node => !inComment(node)).map(contentText));
+    if (messages.length) return messages.join('\n');
+
+    const quotes = [...el.querySelectorAll('blockquote')]
+      .filter(node => visibleLongText(node) && !inComment(node))
+      .map(contentText).filter(Boolean);
+    if (quotes.length) return quotes.join('\n');
+
+    const blocks = unique([...el.querySelectorAll('div[dir="auto"]')]
+      .filter(node => visibleLongText(node) && !node.closest('h2, h3, h4, a, [role="button"]') && !inComment(node))
+      .map(contentText));
+    if (blocks.length) return blocks.join('\n');
+
+    return el.innerText || '';
+  }
+
+  const PUBLIC_LABEL = /^(?:Công khai|Public|Đã chia sẻ với Công khai|Shared with Public)$/i;
+
+  return findRoots().map(el => {
+    const authorNode = [...el.querySelectorAll('a[href*="/user/"]')].find(a => a.innerText.trim() && !inComment(a)) ||
+      el.querySelector('h2 a, h3 a, h4 a, strong a, h2 span, h3 span');
+    const authorLink = authorNode?.closest('a') || authorNode?.querySelector('a');
+    const shared = [...el.querySelectorAll('[data-shared-post], [role="article"]')]
+      .find(node => !inComment(node) && !commentLabel.test(node.getAttribute('aria-label') || ''));
+    const original = shared ? [...shared.querySelectorAll('a[href]')].find(a => postLink(a.href)) : null;
+    return {
     public_post: [...el.querySelectorAll('[aria-label], [title]')]
-      .some(node => /^(?:Công khai|Public|Đã chia sẻ với Công khai|Shared with Public)$/i.test((node.getAttribute('aria-label') || node.getAttribute('title') || '').trim())),
-    text: [...new Set([...el.querySelectorAll(
-      '[data-ad-comet-preview="message"], [data-ad-preview="message"]'
-    )].map(message => message.innerText.trim()).filter(Boolean))].join('\\n') ||
-      [...el.querySelectorAll('blockquote')].filter(node => node.getClientRects().length && node.innerText.trim().length >= 20 &&
-        !/^(Comment|Reply|Bình luận|Trả lời)/i.test(node.closest('[role="article"][aria-label]')?.getAttribute('aria-label') || ''))
-        .map(node => node.innerText.trim()).filter(Boolean).join('\\n') ||
-      [...new Set([...el.querySelectorAll('div[dir="auto"]')].filter(node => node.getClientRects().length &&
-        node.innerText.trim().length >= 20 && !node.closest('h2, h3, h4, a, [role="button"]') &&
-        !/^(Comment|Reply|Bình luận|Trả lời)/i.test(node.closest('[role="article"][aria-label]')?.getAttribute('aria-label') || ''))
-        .map(node => node.innerText.trim()))].join('\\n') || el.innerText || '',
+      .some(node => PUBLIC_LABEL.test((node.getAttribute('aria-label') || node.getAttribute('title') || '').trim())),
+    text: readText(el),
     stats_text: el.innerText || '',
-    author: (el.querySelector('h2 a, h3 a, h4 a, strong a, h2 span, h3 span') || {}).innerText || '',
-    links: [...el.querySelectorAll('a[href]')].map(a => ({href: a.href, text: (a.innerText||'').trim()})),
+    // aria-label chứa số liệu có nhãn rõ: "..., 12 bình luận", "Thích: 8 người", "... của <tác giả>".
+    labels: [...new Set([...el.querySelectorAll('[aria-label]')].map(node => node.getAttribute('aria-label')))],
+    // Bài trong nhóm: người đăng là link /groups/<id>/user/<uid>; tiêu đề h2/h3 là tên nhóm.
+    author: authorNode?.innerText || '',
+    author_url: authorLink?.href || '',
+    is_shared: Boolean(shared),
+    original_post_url: original?.href || '',
+    links: [...el.querySelectorAll('a[href]')].map(a => ({href: a.href, text: (a.innerText || '').trim()})),
     imgs: [...el.querySelectorAll('img[src]')].map(i => ({src: i.src, w: i.naturalWidth, h: i.naturalHeight})),
-  }));
+    videos: [...el.querySelectorAll('video')].filter(v => !inComment(v))
+      .map(v => v.currentSrc || v.src || v.querySelector('source')?.src || '').filter(url => /^https?:/.test(url)),
+  };});
 }
-""".replace("__POST_URL_PREDICATE__", POST_URL_JS)
+""".replace("__POST_URL_PREDICATE__", POST_URL_JS).replace("__COMMENT_LABEL__", COMMENT_LABEL_JS)
 
 
-# Chờ ngẫu nhiên từ a đến b giây giữa các thao tác, không chặn vòng lặp asyncio.
-async def human_pause(a=1.5, b=4.0):
-    await asyncio.sleep(random.uniform(a, b))
-
-
-# Bấm tối đa 15 nút "Xem thêm/See more" để mở nội dung bị thu gọn trên trang.
-async def expand_see_more(page: Page):
-    """Bấm tối đa 15 nút mở rộng nội dung đang bị thu gọn."""
-    selector = 'div[role="button"]:text-matches("^(Xem thêm|See more)$")'
-    buttons = page.locator(selector)
-    button_count = await buttons.count()
-    maximum_buttons = min(button_count, 15)
-
-    for index in range(maximum_buttons):
-        try:
-            button = buttons.nth(index)
-            await button.click(timeout=1000)
-        except Exception:
-            # Facebook có thể thay DOM khiến một nút vừa biến mất.
-            pass
-
-
-# Mở nguồn, đọc và cuộn trang; yield từng bài không trùng để main có thể lưu ngay.
+# Mở nguồn, đọc và cuộn trang; yield từng bài không trùng để bên gọi có thể lưu ngay.
 # Dừng khi đủ số bài, không có bài mới qua max_idle lượt hoặc gặp đăng nhập/checkpoint.
-async def iter_source_posts(page: Page, src: dict, max_posts: int, max_idle: int = 4):
+async def iter_source_posts(page: Page, source: dict, max_posts: int, max_idle: int = 4):
     """Đọc từng bài rồi yield ngay, giúp bên gọi lưu trước khi tiếp tục cuộn."""
-    response = await page.goto(src["url"], wait_until="domcontentloaded")
+    response = await page.goto(source["url"], wait_until="domcontentloaded")
     await human_pause(3, 5)
 
     response_status = "không có response"
@@ -121,24 +164,31 @@ async def iter_source_posts(page: Page, src: dict, max_posts: int, max_idle: int
     maximum_articles = 0
 
     while len(seen_post_ids) < max_posts and idle_turns < max_idle:
-        if "checkpoint" in page.url or "login" in page.url:
+        if is_login_url(page.url):
             print("[!] Facebook yêu cầu đăng nhập/xác minh -> dừng, hãy xử lý tay trên Chrome.")
             break
 
         await expand_see_more(page)
+        hidden_links = await page.evaluate(REVEAL_LINKS_JS)
+        if hidden_links:
+            # Chờ React điền URL thật vào các link vừa được focus.
+            await human_pause(0.5, 1)
+
         new_posts_count = 0
         raw_posts = await page.evaluate(EXTRACT_JS)
         maximum_articles = max(maximum_articles, len(raw_posts))
 
         for raw_post in raw_posts:
-            if src.get("public_only") and not raw_post.get("public_post"):
+            if source.get("public_only") and not raw_post.get("public_post"):
                 continue
 
-            post = parse_article(raw_post, src["name"])
+            post = parse_article(raw_post, source["name"])
             if post is None:
                 continue
             if post["post_id"] in seen_post_ids:
                 continue
+            if is_collapsed_text(post.get("text")) or not post.get("author"):
+                post = await complete_post(page, post)
 
             seen_post_ids.add(post["post_id"])
             new_posts_count += 1

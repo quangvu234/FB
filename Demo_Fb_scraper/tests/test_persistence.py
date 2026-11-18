@@ -6,6 +6,7 @@ import sqlite3
 from pathlib import Path
 from unittest.mock import patch
 
+from fb_scraper.common.comments import normalize_comments
 from fb_scraper.storage import database as storage
 from fb_scraper.storage import files as storage_files
 from tests.persistence_fixtures import PersistenceFixture
@@ -114,11 +115,11 @@ class StoragePersistenceTests(PersistenceFixture, unittest.IsolatedAsyncioTestCa
             finally:
                 check.close()
             storage.export_jsonl(db)
-            snapshot.assert_called_once()
+            self.assertEqual(snapshot.call_count, 4)
         row = self.rows()[0]
         self.assertEqual(row["text"], "Updated")
         self.assertEqual(row["author"], "Author")
-        self.assertEqual(row["top_comments"], ["Comment"])
+        self.assertEqual(row["top_comments"], normalize_comments(["Comment"]))
         self.assertEqual(row["images"], ["image"])
         self.assertEqual(row["entity_id"], "u_test")
 
@@ -130,15 +131,19 @@ class StoragePersistenceTests(PersistenceFixture, unittest.IsolatedAsyncioTestCa
         path.write_text((json.dumps(result) + "\n") * 2, encoding="utf-8")
         db = storage.init_db()
         try:
-            self.assertEqual(db.execute("SELECT COUNT(*) FROM search_results").fetchone()[0], 2)
+            self.assertEqual(sum(len(json.loads(row[0]).get("search_history", []))
+                                 for row in db.execute("SELECT metadata FROM sources")), 2)
             storage.save_search_result(db, result)
             storage.export_search_results(db)
         finally:
             db.close()
         db = storage.init_db()
         self.addCleanup(db.close)
-        self.assertEqual(db.execute("SELECT COUNT(*) FROM search_results").fetchone()[0], 3)
-        self.assertEqual(len(path.read_text(encoding="utf-8").splitlines()), 3)
+        self.assertEqual(sum(len(json.loads(row[0]).get("search_history", []))
+                             for row in db.execute("SELECT metadata FROM sources")), 3)
+        sources = [json.loads(line) for line in (self.data / "sources.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(len(sources[0]["metadata"]["search_history"]), 3)
+        self.assertEqual(len(path.read_text(encoding="utf-8").splitlines()), 2)
 
     def test_invalid_legacy_journal_stops_migration_without_overwriting_history(self):
         self.data.mkdir(parents=True)

@@ -18,7 +18,7 @@ class AgentPersistenceTests(PersistenceFixture, unittest.IsolatedAsyncioTestCase
         record = self.rows()[0]
         record.update({"links": [], "images": [], "image_files": ["ảnh.jpg"], "ocr": [{"text": "OCR"}], "top_comments": []})
         storage.save_post(db, record)
-        self.persist(db, agent_mode.FBPost.model_validate(saved.model_dump()), "test")
+        self.persist(db, agent_mode.Post.model_validate(saved.model_dump()), "test")
         self.assertEqual(self.rows()[0]["image_files"], ["ảnh.jpg"])
         self.assertEqual(self.rows()[0]["ocr"], [{"text": "OCR"}])
 
@@ -27,7 +27,7 @@ class AgentPersistenceTests(PersistenceFixture, unittest.IsolatedAsyncioTestCase
         self.assertEqual(len(result.posts), 1)
         self.assertEqual(len(self.rows()), 1)
         agent_json = json.loads((self.data / "data_agent.json").read_text(encoding="utf-8"))
-        self.assertEqual(agent_json["posts"][0]["post_id"], "1")
+        self.assertEqual(agent_json["posts"][0]["post_key"], "1")
 
     async def test_agent_partial_data_survives_llm_error(self):
         with self.assertRaisesRegex(RuntimeError, "LLM disconnected"):
@@ -67,7 +67,7 @@ class AgentPersistenceTests(PersistenceFixture, unittest.IsolatedAsyncioTestCase
             result = await self.run_fake_agent("no_final")
         self.assertEqual(len(self.rows()), 1)
         pending = self.data / "data_agent.pending.json"
-        self.assertEqual(json.loads(pending.read_text(encoding="utf-8"))["posts"][0]["post_id"], "1")
+        self.assertEqual(json.loads(pending.read_text(encoding="utf-8"))["posts"][0]["post_key"], "1")
         self.assertTrue(storage.export_agent_output(result.posts))
         self.assertFalse(pending.exists())
 

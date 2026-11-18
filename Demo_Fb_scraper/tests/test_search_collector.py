@@ -11,6 +11,8 @@ from fb_scraper.search import collector as search
 from fb_scraper.search import reader as reader
 from fb_scraper.storage import database as storage
 from fb_scraper.storage import files as storage_files
+
+
 class SearchParsingTests(unittest.TestCase):
     def test_search_urls_keep_keyword_and_correct_category(self):
         for kind, route in (("profile", "people"), ("group", "groups")):
@@ -135,7 +137,7 @@ class SearchDispatchTests(unittest.IsolatedAsyncioTestCase):
             await callbacks[kind](urls, options)
 
         def replace_file(path, target):
-            if locked_manifest and target.name == "search_results.jsonl":
+            if locked_manifest and target.name == "sources.jsonl":
                 raise PermissionError("file locked")
             return original(path, target)
 
@@ -160,9 +162,10 @@ class SearchDispatchTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(urls), 3)
             self.assertTrue(args.info_only)
             self.assertEqual(args.max_posts, 0)
-            self.assertEqual(args.comments, 0)
+            self.assertEqual(args.max_comments, 0)
             self.assertFalse(args.ocr)
-        records = [json.loads(line) for line in (self.data / "search_results.jsonl").read_text(encoding="utf-8").splitlines()]
+        records = [result for line in (self.data / "sources.jsonl").read_text(encoding="utf-8").splitlines()
+                   for result in json.loads(line)["metadata"].get("search_history", [])]
         self.assertEqual(len(records), 6)
         self.assertEqual({item["entity_type"] for item in records}, {"profile", "group"})
 
@@ -170,7 +173,8 @@ class SearchDispatchTests(unittest.IsolatedAsyncioTestCase):
         profile, group = await self.run_search(["Test", "Other", "--type", "profile"], lambda keyword, kind: [1, 2])
         self.assertEqual(len(profile.await_args.args[0]), 2)
         group.assert_not_awaited()
-        records = (self.data / "search_results.jsonl").read_text(encoding="utf-8").splitlines()
+        records = [result for line in (self.data / "sources.jsonl").read_text(encoding="utf-8").splitlines()
+                   for result in json.loads(line)["metadata"].get("search_history", [])]
         self.assertEqual(len(records), 4)
 
     async def test_group_only_and_empty_results_do_not_run_profile_collector(self):

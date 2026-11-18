@@ -14,7 +14,7 @@ from fb_scraper.entities import collector as entities
 from fb_scraper.common.models import CollectionOptions
 from fb_scraper.storage import database as storage
 from fb_scraper.entities.parser import parse_entity
-from fb_scraper.entities.text import parse_display_count
+from fb_scraper.common.numbers import parse_count
 from fb_scraper.storage import files as storage_files
 from fb_scraper.common.urls import canonical_entity_url, entity_about_url
 
@@ -40,8 +40,8 @@ class EntityParsingTests(unittest.TestCase):
     def test_counts_in_vietnamese_and_english(self):
         for raw, value in (("121 triệu", 121000000), ("56,1K", 56100), ("56.060", 56060),
                            ("56,060", 56060), ("1.2 million", 1200000), ("2 nghìn", 2000), ("3 Tr", 3000000)):
-            self.assertEqual(parse_display_count(raw), value)
-        self.assertIsNone(parse_display_count("không biết"))
+            self.assertEqual(parse_count(raw), value)
+        self.assertIsNone(parse_count("không biết"))
 
     def test_profile_without_h1_and_separate_bio(self):
         root = {"text": "Mark Zuckerberg\n121 triệu người theo dõi\nTheo dõi\nThông tin cá nhân\nSống ở Palo Alto, California\nTừ Dobbs Ferry\n14 tháng 5, 1984\nCông việc\nMeta\nFounder and CEO\nXem thêm công việc\nGiáo dục\nHarvard University\nXem thêm học vấn\nBài viết\nCông việc\nNội dung bài viết không được lấy", "headings": ["Thông tin cá nhân", "Công việc", "Giáo dục", "Bài viết"]}
@@ -98,7 +98,7 @@ class EntityParsingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             entities.validate_sources([GROUP], "profile")
         with self.assertRaises(ValueError):
-            CollectionOptions(comments=-1)
+            CollectionOptions(max_comments=-1)
 
     def test_comment_permalink_does_not_supply_post_time(self):
         raw = {"text": "Nội dung bài viết công khai của tác giả.", "author": "Mark", "imgs": [],
@@ -131,9 +131,10 @@ class EntityStorageTests(unittest.IsolatedAsyncioTestCase):
         db.close()
         db = storage.init_db()
         self.addCleanup(db.close)
-        self.assertEqual(storage.load_post(db, "123")["top_comments"], ["existing comment"])
+        self.assertEqual(storage.load_post(db, "123")["top_comments"][0]["text"], "existing comment")
         self.assertIsNone(storage.load_post(db, "123")["entity_type"])
-        self.assertEqual(db.execute("SELECT COUNT(*) FROM profiles").fetchone()[0], 0)
+        self.assertEqual(db.execute("SELECT COUNT(*) FROM sources").fetchone()[0], 1)
+        self.assertFalse(db.execute("SELECT 1 FROM sqlite_master WHERE name='profiles'").fetchone())
 
     def test_upserts_entities_lists_and_keeps_last_metadata_on_failure(self):
         db = storage.init_db()
@@ -143,7 +144,7 @@ class EntityStorageTests(unittest.IsolatedAsyncioTestCase):
         failed = parse_entity(PROFILE, "profile", [{"login_required": True}])
         storage.save_entity(db, "profile", failed)
         storage.export_entities(db, "profile")
-        rows = [json.loads(line) for line in (self.data / "profiles.jsonl").read_text(encoding="utf-8").splitlines()]
+        rows = [json.loads(line)["metadata"]["entity"] for line in (self.data / "sources.jsonl").read_text(encoding="utf-8").splitlines()]
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["work"], ["Meta"])
         self.assertEqual(rows[0]["collection_status"], "login_required")
@@ -154,7 +155,7 @@ class EntityStorageTests(unittest.IsolatedAsyncioTestCase):
         db = storage.init_db()
         self.addCleanup(db.close)
         original = Path.replace
-        target = self.data / "groups.jsonl"
+        target = self.data / "sources.jsonl"
 
         def locked(source, destination):
             if destination == target:
@@ -164,10 +165,10 @@ class EntityStorageTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(Path, "replace", autospec=True, side_effect=locked), patch.object(storage_files.time, "sleep"):
             storage.save_entity(db, "group", parse_entity(GROUP, "group", [{"name": "Python Vietnam"}]))
             self.assertFalse(storage.export_entities(db, "group"))
-        self.assertEqual(db.execute("SELECT COUNT(*) FROM groups").fetchone()[0], 1)
-        self.assertTrue((self.data / "groups.pending.jsonl").is_file())
+        self.assertEqual(db.execute("SELECT COUNT(*) FROM sources WHERE source_type='group'").fetchone()[0], 1)
+        self.assertTrue((self.data / "sources.pending.jsonl").is_file())
         self.assertTrue(storage.export_entities(db, "group"))
-        self.assertFalse((self.data / "groups.pending.jsonl").exists())
+        self.assertFalse((self.data / "sources.pending.jsonl").exists())
 
     def test_post_association_survives_keyword_update(self):
         db = storage.init_db()
@@ -177,7 +178,7 @@ class EntityStorageTests(unittest.IsolatedAsyncioTestCase):
         storage.save_post(db, {"post_id": "123", "text": "Updated", "top_comments": ["Comment"]})
         row = storage.load_post(db, "123")
         self.assertEqual(row["entity_id"], "u_pythonvietnam")
-        self.assertEqual(row["top_comments"], ["Comment"])
+        self.assertEqual(row["top_comments"][0]["text"], "Comment")
 
     async def run_collector(self, kind, flags, entity, posts=()):
         page = SimpleNamespace(close=AsyncMock())
@@ -205,8 +206,14 @@ class EntityStorageTests(unittest.IsolatedAsyncioTestCase):
         entity = parse_entity(PROFILE, "profile", [{"name": "Mark Zuckerberg"}])
         requests = await self.run_collector("profile", [PROFILE, "--info-only"], entity)
         self.assertEqual(requests, [])
-        self.assertEqual(json.loads((self.data / "profiles.jsonl").read_text(encoding="utf-8"))["name"], "Mark Zuckerberg")
+        self.assertEqual(json.loads((self.data / "sources.jsonl").read_text(encoding="utf-8"))["source_label"], "Mark Zuckerberg")
         self.assertEqual((self.data / "posts.jsonl").read_text(encoding="utf-8"), "")
+
+    async def test_explicit_page_type_is_stored_as_page_source(self):
+        entity = parse_entity(PROFILE, "profile", [{"name": "Example Page"}])
+        await self.run_collector("page", [PROFILE, "--info-only"], entity)
+        source = json.loads((self.data / "sources.jsonl").read_text(encoding="utf-8"))
+        self.assertEqual(source["source_type"], "page")
 
     async def test_private_and_unknown_group_never_collect_posts(self):
         for privacy in ("private", None):

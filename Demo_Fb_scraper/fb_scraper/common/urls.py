@@ -7,6 +7,13 @@ FACEBOOK_HOSTS = {"facebook.com", "www.facebook.com", "m.facebook.com", "mbasic.
 POST_PATH_RE = re.compile(r"/(?:posts|permalink|videos|reel)/(?:\d+|pfbid[a-zA-Z0-9]+)(?:/|$)")
 PHOTO_PATH_RE = re.compile(r"/photos/(?:[^/]+/)*(?:\d+|pfbid[a-zA-Z0-9]+)(?:/|$)")
 SHARE_PATH_RE = re.compile(r"^/share/[pvr]/[a-zA-Z0-9]+/?$")
+GROUP_HOME_RE = re.compile(r"/groups/([a-zA-Z0-9._-]+)/?")
+
+
+def is_login_url(url: str) -> bool:
+    """Facebook chuyển sang trang đăng nhập/xác minh; chỉ xét phần path, không xét ?q=."""
+    path = urlparse(url or "").path.lower()
+    return "/login" in path or "/checkpoint" in path
 
 
 def make_post_id(url: str, text: str) -> str:
@@ -151,6 +158,12 @@ def canonical_post_url(href: str) -> str:
     query_parameters = parse_qs(parsed_url.query)
     keys_to_keep = ()
 
+    # Kết quả tìm kiếm bài trong nhóm: /groups/<nhóm>/?multi_permalinks=<ID bài>.
+    group_match = GROUP_HOME_RE.fullmatch(path)
+    multi_permalink = query_parameters.get("multi_permalinks", [""])[0].split(",")[0]
+    if group_match and multi_permalink.isdigit():
+        return f"https://www.facebook.com/groups/{group_match.group(1)}/posts/{multi_permalink}/"
+
     if route in {"/story.php", "/permalink.php"}:
         if not query_parameters.get("story_fbid"):
             return ""
@@ -192,6 +205,8 @@ href => {
     const path = u.pathname;
     if (path === '/search' || path.startsWith('/search/')) return false;
     const route = path.replace(/\/$/, '');
+    if (/^\/groups\/[a-zA-Z0-9._-]+\/?$/.test(path) &&
+        /^\d+$/.test((u.searchParams.get('multi_permalinks') || '').split(',')[0])) return true;
     if (['/story.php', '/permalink.php'].includes(route)) return Boolean(u.searchParams.get('story_fbid'));
     if (['/photo', '/photo.php'].includes(route)) return Boolean(u.searchParams.get('fbid'));
     if (['/watch', '/video.php'].includes(route)) return Boolean(u.searchParams.get('v'));
